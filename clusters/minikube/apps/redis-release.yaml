@@ -6,6 +6,7 @@ metadata:
 spec:
   interval: 10m
   targetNamespace: default
+  releaseName: redis
   chart:
     spec:
       chart: redis

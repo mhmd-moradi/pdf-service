@@ -9,6 +9,7 @@ metadata:
 spec:
   interval: 10m
   targetNamespace: default
+  releaseName: postgres
   chart:
     spec:
       chart: postgresql

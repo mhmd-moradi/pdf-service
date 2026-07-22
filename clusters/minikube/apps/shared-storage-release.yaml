@@ -6,6 +6,7 @@ metadata:
 spec:
   interval: 5m
   targetNamespace: default
+  releaseName: shared-storage
   chart:
     spec:
       # Path to the chart WITHIN the GitRepository source, not a separate

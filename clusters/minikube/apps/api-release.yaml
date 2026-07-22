@@ -6,6 +6,7 @@ metadata:
 spec:
   interval: 5m
   targetNamespace: default
+  releaseName: api
   # Flux won't install this until these releases report Ready -- avoids the
   # API pod crash-looping on a missing PVC/Secret/DB during first install.
   dependsOn:
