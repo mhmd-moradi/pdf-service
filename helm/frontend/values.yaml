@@ -1,6 +1,9 @@
 replicaCount: 1
 
 image:
+  # repository/tag below are automatically updated by the CI workflow
+  # (.github/workflows/build-and-deploy.yml) after each push to main.
+  # Manual edits here will be overwritten on the next CI run.
   repository: pdf-service-frontend
   tag: local
   pullPolicy: IfNotPresent

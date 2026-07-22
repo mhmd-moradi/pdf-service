@@ -1,0 +1,17 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: shared-storage
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: default
+  chart:
+    spec:
+      # Path to the chart WITHIN the GitRepository source, not a separate
+      # registry -- this is what makes an in-repo Helm chart Flux-managed.
+      chart: ./helm/shared-storage
+      sourceRef:
+        kind: GitRepository
+        name: pdf-service
+      reconcileStrategy: Revision

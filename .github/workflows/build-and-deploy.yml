@@ -1,0 +1,81 @@
+name: Build and Deploy
+
+# Runs on every push to main. For a learning project this rebuilds all
+# three services every time for simplicity -- a larger team would use
+# path filters (e.g. dorny/paths-filter) to only rebuild what changed.
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # Required so this workflow can push images to GHCR and (in the
+    # deploy job below) commit back to this same repo.
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      matrix:
+        service: [api, worker, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Basic sanity check (placeholder for real tests)
+        # A real project would run `pytest` here. This project doesn't have
+        # a test suite yet -- this at least catches Python syntax errors
+        # before we waste time building/pushing a broken image.
+        if: matrix.service != 'frontend'
+        run: |
+          python3 -m py_compile ${{ matrix.service }}/*.py
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/pdf-service-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/pdf-service-${{ matrix.service }}:latest
+
+  update-manifests:
+    # This is the actual CI -> GitOps handoff: CI doesn't deploy anything
+    # directly. It just updates the chart's values.yaml with the new image
+    # tag and commits that change -- Flux (already watching this repo)
+    # picks up the commit and does the actual deployment. CI proposes,
+    # GitOps applies.
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Bump image tag and repository in each chart's values.yaml
+        run: |
+          for svc in api worker frontend; do
+            sed -i "s|repository: .*|repository: ${{ env.REGISTRY }}/${{ github.repository_owner }}/pdf-service-${svc}|" helm/${svc}/values.yaml
+            sed -i "s|tag: .*|tag: \"${{ github.sha }}\"|" helm/${svc}/values.yaml
+          done
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/api/values.yaml helm/worker/values.yaml helm/frontend/values.yaml
+          # [skip ci] prevents this automated commit from re-triggering this
+          # same workflow, which would otherwise loop forever.
+          git diff --cached --quiet || git commit -m "ci: bump image tags to ${{ github.sha }} [skip ci]"
+          git push

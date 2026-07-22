@@ -1,0 +1,15 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: frontend
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: default
+  chart:
+    spec:
+      chart: ./helm/frontend
+      sourceRef:
+        kind: GitRepository
+        name: pdf-service
+      reconcileStrategy: Revision
