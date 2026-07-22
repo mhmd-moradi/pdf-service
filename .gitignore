@@ -1,0 +1,19 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+crash.*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# App runtime output
+results/
+
+# OS
+.DS_Store
