@@ -466,7 +466,260 @@ flux uninstall
 
 ---
 
+## Phase 5: AWS Foundation (Terraform: VPC + EKS)
 
+This is where real AWS costs begin. Read the cost section below before
+running anything.
+
+### Cost estimate
+
+| Resource | Cost while running |
+|---|---|
+| EKS control plane | ~$0.10/hr flat |
+| 2x t3.small spot nodes | ~$0.01-0.02/hr total |
+| NAT Gateway (single, not per-AZ) | ~$0.045/hr + data |
+| **Total while running** | **~$0.15-0.20/hr** |
+
+If you `terraform destroy` at the end of every session and only run this a
+few hours a week, expect **$5-15/month**. Left running 24/7, expect
+**~$110-150/month** — mainly the EKS control plane's flat fee and the NAT
+Gateway, both billed whether you're using them or not.
+
+**The rule from here on: `terraform destroy` when you're done for the
+session.** This isn't optional — treat it the same as closing your laptop.
+
+### 1. Create the state backend (one-time)
+
+```bash
+cd infra/bootstrap
+terraform init
+terraform apply -var="state_bucket_name=pdf-service-tfstate-YOUR_INITIALS_OR_RANDOM"
+```
+
+Pick a genuinely unique bucket name — S3 bucket names are global across
+*all* AWS accounts, not just yours. Write down the exact name it accepts.
+
+This creates the S3 bucket + DynamoDB table and stores **its own** state
+locally (`infra/bootstrap/terraform.tfstate`) — don't delete that file, and
+don't run `terraform destroy` here later unless you want to tear down your
+entire state backend along with everything it's tracking.
+
+### 2. Point envs/dev at that backend
+
+Edit `infra/envs/dev/backend.tf` and replace both
+`REPLACE_WITH_YOUR_STATE_BUCKET_NAME` occurrences with the exact bucket
+name from step 1.
+
+### 3. Apply the VPC + EKS
+
+```bash
+cd ../envs/dev
+terraform init
+terraform plan    # review what it's about to create before applying
+terraform apply
+```
+
+This takes **10-15 minutes** — EKS cluster creation is slow, that's normal,
+not a hang.
+
+### 4. Connect kubectl to the new cluster
+
+```bash
+terraform output configure_kubectl
+```
+Copy and run the command it prints (something like
+`aws eks update-kubeconfig --region eu-central-1 --name pdf-service-dev`),
+then confirm:
+```bash
+kubectl get nodes
+```
+Should show 2 nodes, `Ready`, after a minute or two.
+
+### What's deliberately NOT here yet (later phases)
+
+- ECR repositories (Phase 6)
+- Anything deploying your actual app to this cluster (Phase 6)
+- IRSA/OIDC provider resource (Phase 8 — the module already outputs the
+  OIDC issuer URL you'll need, but doesn't create the IAM role yet)
+- RDS (Phase 7)
+
+### Tear down (do this every session)
+
+```bash
+cd infra/envs/dev
+terraform destroy
+```
+Confirm with `yes` when prompted. This removes the EKS cluster, node
+group, NAT Gateway, and VPC — the expensive stuff. It does **not** touch
+the S3 state bucket/DynamoDB table from step 1 (that's a separate
+Terraform config, untouched by this destroy).
+
+Next session, `terraform apply` again from `envs/dev` — same config, same
+state backend, cluster comes back identical.
+
+---
+
+## Phase 6: Real workloads on EKS (ECR, ALB, Flux against the real cluster)
+
+This deploys the app for real: ECR for images, a real AWS Application Load
+Balancer for traffic, and Flux managing this cluster the same way it
+managed minikube — just pointed at `clusters/eks-dev/` instead of
+`clusters/minikube/`.
+
+### What's new here that minikube didn't need
+
+- **ECR repositories** for api/worker/frontend images
+- **EBS CSI driver + a `gp3` StorageClass** — EKS has no default storage
+  provisioner; every PVC would stay `Pending` forever without this
+- **AWS Load Balancer Controller** — watches Ingress resources and
+  provisions real ALBs
+- **GitHub Actions → AWS via OIDC** — no static AWS keys stored in GitHub
+- Both **api** and **frontend** now get their own Ingress/ALB (frontend's
+  JS can't call `localhost:8000` anymore once this isn't your laptop)
+
+### 1. Re-apply Terraform with the new resources
+
+The `iam_policy.json` for the Load Balancer Controller is already included
+(fetched from AWS's official source). You do need to provide your GitHub
+repo:
+
+```bash
+cd infra/envs/dev
+terraform apply -var="github_repo=YOUR_GITHUB_USERNAME/pdf-service"
+```
+
+This adds: 3 ECR repos, the cluster's OIDC provider, the EBS CSI driver
+addon + its IAM role, the Load Balancer Controller's IAM role, and the
+GitHub Actions OIDC provider + IAM role. Review the plan before confirming
+— it should be entirely new additions, nothing destructive to what Phase 5
+already created.
+
+### 2. Capture the outputs you'll need
+
+```bash
+terraform output ecr_repository_urls
+terraform output lb_controller_role_arn
+terraform output github_actions_role_arn
+terraform output vpc_id
+```
+
+Keep these visible — you'll paste them into two places in the next steps.
+
+### 3. Configure GitHub Actions with the role ARN
+
+GitHub repo → **Settings** → **Secrets and variables** → **Actions** →
+**Variables** tab → **New repository variable**:
+- Name: `AWS_GITHUB_ACTIONS_ROLE_ARN`
+- Value: the `github_actions_role_arn` output from step 2
+
+(This is a repo **variable**, not a secret — an IAM role ARN isn't
+sensitive by itself; what matters is that only your repo's `main` branch
+can assume it, which the Terraform trust policy already restricts.)
+
+### 4. Fill in the two placeholders in the Load Balancer Controller manifest
+
+Edit `clusters/eks-dev/apps/aws-lb-controller-release.yaml`:
+- `vpcId`: replace with the `vpc_id` output
+- `eks.amazonaws.com/role-arn`: replace with the `lb_controller_role_arn` output
+
+### 5. Update the GitHub repo URL for this cluster's Flux config
+
+Edit `clusters/eks-dev/flux-system-config.yaml`, replace
+`YOUR_GITHUB_USERNAME` with your actual username (same as the minikube one
+was).
+
+### 6. Commit and push everything
+
+```bash
+git add .
+git commit -m "Phase 6: EKS workloads, ECR, ALB, GitOps for eks-dev"
+git push
+```
+
+This push will trigger the GitHub Actions workflow — watch the **Actions**
+tab. It should build all 3 images, push to ECR (via OIDC, no stored keys),
+and commit updated `values.yaml` files back to `main`.
+
+### 7. Confirm kubectl is pointed at the EKS cluster (not minikube)
+
+```bash
+kubectl config current-context
+```
+Should show something with `pdf-service-dev` in it. If it shows minikube,
+switch:
+```bash
+kubectl config use-context $(kubectl config get-contexts -o name | grep pdf-service-dev)
+```
+
+### 8. Install Flux on this cluster and point it at the repo
+
+```bash
+flux install
+kubectl apply -f clusters/eks-dev/flux-system-config.yaml
+```
+
+### 9. Watch everything reconcile
+
+```bash
+flux get helmreleases -A
+kubectl get pods -w
+```
+
+Expect this to take longer than minikube did — Postgres/Redis need EBS
+volumes provisioned (not instant like minikube's hostPath), and the Load
+Balancer Controller needs to actually create ALBs in AWS (takes a couple
+minutes each). If `api` or `frontend` HelmReleases sit waiting, check
+`dependsOn` — both wait for `aws-load-balancer-controller` to be ready
+first.
+
+### 10. Get your ALB URLs
+
+```bash
+kubectl get ingress
+```
+This shows the `ADDRESS` column with each ALB's public DNS name (something
+like `k8s-default-api-xxxx.eu-central-1.elb.amazonaws.com`). Give AWS a
+few minutes after the Ingress is created for DNS to actually resolve.
+
+### 11. Point the frontend at the real API URL
+
+The frontend's `frontend/index.html` still has `API_BASE` hardcoded to
+`http://localhost:8000` — that was fine for local dev and port-forwarding,
+but the frontend now runs somewhere that isn't your laptop. Update it:
+
+```js
+const API_BASE = "http://YOUR_API_ALB_DNS_NAME_FROM_STEP_10";
+```
+
+Commit and push this change — it'll flow through the same CI → GitOps loop
+from Phase 4, rebuilding and redeploying the frontend automatically.
+
+### 12. Verify end to end
+
+Visit the frontend's ALB URL in your browser, submit a job, confirm it
+completes and the PDF downloads — the full pipeline, for real, on AWS.
+
+### Debugging
+
+```bash
+kubectl logs -n kube-system deployment/aws-load-balancer-controller
+kubectl describe ingress api-api
+kubectl get pvc                    # confirm Bound, not Pending
+kubectl describe pvc <name>        # if Pending, this shows why
+```
+
+A PVC stuck `Pending` almost always means the EBS CSI addon isn't healthy
+yet — check `kubectl get pods -n kube-system | grep ebs`.
+
+### Cost note
+
+ALBs cost ~$0.0225/hr + a small per-LCU charge each, and you now have two
+(api + frontend) instead of zero. Factor this into your `terraform destroy`
+discipline — this phase raises the hourly cost a bit further.
+
+---
+
+## Troubleshooting
 
 **`psycopg2.errors.InsufficientPrivilege: permission denied for table jobs`**
 Your app DB user doesn't own/have grants on the table. Re-run the GRANT

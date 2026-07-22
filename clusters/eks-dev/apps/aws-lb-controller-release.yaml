@@ -1,0 +1,27 @@
+# Watches Ingress resources with ingressClassName: alb and provisions/manages
+# real ALBs to match. Needs its ServiceAccount annotated with the IRSA role
+# ARN from Terraform (infra/envs/dev, output "lb_controller_role_arn").
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: aws-load-balancer-controller
+  namespace: flux-system
+spec:
+  interval: 10m
+  targetNamespace: kube-system
+  releaseName: aws-load-balancer-controller
+  chart:
+    spec:
+      chart: aws-load-balancer-controller
+      sourceRef:
+        kind: HelmRepository
+        name: eks-charts
+  values:
+    clusterName: pdf-service-dev
+    region: eu-central-1
+    vpcId: "vpc-0c85c7e9da1216cd5"
+    serviceAccount:
+      create: true
+      name: aws-load-balancer-controller
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::668723997539:role/pdf-service-dev-lb-controller-role"

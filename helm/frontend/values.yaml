@@ -4,13 +4,22 @@ image:
   # repository/tag below are automatically updated by the CI workflow
   # (.github/workflows/build-and-deploy.yml) after each push to main.
   # Manual edits here will be overwritten on the next CI run.
-  repository: ghcr.io/mhmd-moradi/pdf-service-frontend
-  tag: "7534901b87d11deb46188fe5f9884a366a09cc5d"
+  repository: pdf-service-frontend
+  tag: local
   pullPolicy: IfNotPresent
 
 service:
   type: NodePort
   port: 80
+
+# Ingress is off by default (minikube uses the NodePort service above via
+# `minikube service`). EKS enables this instead, routing through the AWS
+# Load Balancer Controller to a real ALB.
+ingress:
+  enabled: false
+  className: alb
+  annotations: {}
+  host: ""
 
 resources:
   requests:

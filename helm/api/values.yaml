@@ -4,8 +4,8 @@ image:
   # repository/tag below are automatically updated by the CI workflow
   # (.github/workflows/build-and-deploy.yml) after each push to main.
   # Manual edits here will be overwritten on the next CI run.
-  repository: ghcr.io/mhmd-moradi/pdf-service-api
-  tag: "7534901b87d11deb46188fe5f9884a366a09cc5d"
+  repository: pdf-service-api
+  tag: local
   # Built locally into minikube's Docker daemon (see README) rather than
   # pulled from a registry -- IfNotPresent avoids Kubernetes trying (and
   # failing) to pull from Docker Hub for an image name it doesn't own.
@@ -14,6 +14,14 @@ image:
 service:
   type: ClusterIP
   port: 8000
+
+# Off by default (Phase 3 minikube uses port-forward instead). EKS enables
+# this to expose the API through the AWS Load Balancer Controller.
+ingress:
+  enabled: false
+  className: alb
+  annotations: {}
+  host: ""
 
 resources:
   requests:

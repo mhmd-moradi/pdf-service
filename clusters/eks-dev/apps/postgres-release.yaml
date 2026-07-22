@@ -1,0 +1,45 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: postgres
+  namespace: flux-system
+spec:
+  interval: 10m
+  targetNamespace: default
+  releaseName: postgres
+  chart:
+    spec:
+      chart: postgresql
+      version: "18.x"
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami
+  values:
+    auth:
+      username: pdfapp
+      password: pdfapp_dev_pw
+      database: pdfservice
+    primary:
+      persistence:
+        storageClass: gp3
+      initdb:
+        scripts:
+          schema.sql: |
+            -- gen_random_uuid() is built into Postgres 13+; this extension keeps it working on older versions too
+            CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+            -- Jobs table: one row per submitted URL-to-PDF request
+            CREATE TABLE IF NOT EXISTS jobs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                url TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result_path TEXT,
+                error_message TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                completed_at TIMESTAMPTZ
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at DESC);
+
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pdfapp;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO pdfapp;

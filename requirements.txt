@@ -1,0 +1,15 @@
+# Combined dependencies for local development/testing only.
+# Once you containerize (Phase 2), api/ and worker/ each keep their own
+# separate requirements.txt so each gets a lean, purpose-built Docker image.
+
+# --- API ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+
+# --- Worker ---
+playwright==1.47.0
+
+# --- Shared by both ---
+psycopg2-binary==2.9.9
+redis==5.0.8
