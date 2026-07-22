@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: pdf-service-worker
+  tag: local
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+env:
+  postgresHost: "postgres-postgresql"
+  postgresPort: "5432"
+  postgresDb: "pdfservice"
+  postgresUser: "pdfapp"
+  redisHost: "redis-master"
+  redisPort: "6379"
+  redisQueueName: "pdf_jobs"
+  resultsDir: "/app/results"
+
+postgresSecretName: "postgres-credentials"
+postgresSecretKey: "password"
+resultsPvcName: "pdf-results"
+
+cronjob:
+  enabled: true
+  # Every day at 3am
+  schedule: "0 3 * * *"
+  retentionDays: 7
+  # CronJobs don't need the full worker resource budget -- it's a quick
+  # DB query + a few file deletes, not a browser render.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

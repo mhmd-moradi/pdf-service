@@ -1,0 +1,4 @@
+apiVersion: v2
+name: shared-storage
+description: Shared PVC for PDF results, mounted by both the api and worker charts
+version: 0.1.0

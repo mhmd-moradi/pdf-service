@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "api.fullname" . }}
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "api.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "api.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_HOST
+              value: {{ .Values.env.postgresHost | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.env.postgresPort | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.env.postgresDb | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.env.postgresUser | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresSecretName }}
+                  key: {{ .Values.postgresSecretKey }}
+            - name: REDIS_HOST
+              value: {{ .Values.env.redisHost | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.env.redisPort | quote }}
+            - name: REDIS_QUEUE_NAME
+              value: {{ .Values.env.redisQueueName | quote }}
+            - name: RESULTS_DIR
+              value: {{ .Values.env.resultsDir | quote }}
+          volumeMounts:
+            - name: results
+              mountPath: {{ .Values.env.resultsDir }}
+          # Kubernetes probes -- this is the payoff for having built /health
+          # in Phase 1. livenessProbe restarts the pod if it stops
+          # responding; readinessProbe controls whether it receives traffic.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: {{ .Values.resultsPvcName }}

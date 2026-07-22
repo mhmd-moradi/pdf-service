@@ -1,0 +1,42 @@
+{{- if .Values.cronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-cleanup
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  # Prevents overlapping runs if one cleanup takes longer than expected
+  # and the next scheduled time arrives before it finishes.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Don't let a stuck cleanup job run forever
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              # Overrides the image's default CMD (worker.py) to run the
+              # cleanup script instead -- same image, different job.
+              command: ["python3", "cleanup.py"]
+              env:
+                {{- include "worker.env" . | nindent 16 }}
+                - name: RETENTION_DAYS
+                  value: {{ .Values.cronjob.retentionDays | quote }}
+              volumeMounts:
+                - name: results
+                  mountPath: {{ .Values.env.resultsDir }}
+              resources:
+                {{- toYaml .Values.cronjob.resources | nindent 16 }}
+          volumes:
+            - name: results
+              persistentVolumeClaim:
+                claimName: {{ .Values.resultsPvcName }}
+{{- end }}

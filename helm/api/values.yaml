@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: pdf-service-api
+  tag: local
+  # Built locally into minikube's Docker daemon (see README) rather than
+  # pulled from a registry -- IfNotPresent avoids Kubernetes trying (and
+  # failing) to pull from Docker Hub for an image name it doesn't own.
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+env:
+  # NOTE: these hostnames depend on the release names you use when
+  # installing the Bitnami postgresql/redis charts. Verify with
+  # `kubectl get svc` and adjust here if different.
+  postgresHost: "postgres-postgresql"
+  postgresPort: "5432"
+  postgresDb: "pdfservice"
+  postgresUser: "pdfapp"
+  redisHost: "redis-master"
+  redisPort: "6379"
+  redisQueueName: "pdf_jobs"
+  resultsDir: "/app/results"
+
+# Must match the key used when creating the postgres-credentials Secret
+# (see helm/api/README note in the main project README).
+postgresSecretName: "postgres-credentials"
+postgresSecretKey: "password"
+
+# Name of the PVC created by the shared-storage chart -- must be installed
+# before this chart, or the pod will stay Pending waiting for the volume.
+resultsPvcName: "pdf-results"

@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pdfapp
+      POSTGRES_PASSWORD: pdfapp_dev_pw
+      POSTGRES_DB: pdfservice
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres's official image auto-runs any .sql file placed here on
+      # first startup ONLY (won't re-run on restart) — this replaces the
+      # manual `psql -f db/schema.sql` step from local dev.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdfapp -d pdfservice"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    environment:
+      # Note: hostnames here are the Compose SERVICE NAMES ("postgres",
+      # "redis"), not "localhost" -- Compose's internal DNS resolves these
+      # to the right container automatically.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: pdfservice
+      POSTGRES_USER: pdfapp
+      POSTGRES_PASSWORD: pdfapp_dev_pw
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      RESULTS_DIR: /app/results
+    volumes:
+      # Shared with the worker so the API can serve files the worker writes.
+      - results_data:/app/results
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./worker
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: pdfservice
+      POSTGRES_USER: pdfapp
+      POSTGRES_PASSWORD: pdfapp_dev_pw
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      RESULTS_DIR: /app/results
+    volumes:
+      - results_data:/app/results
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres_data:
+  results_data:

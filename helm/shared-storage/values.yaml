@@ -1,0 +1,9 @@
+storage:
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  storageClassName: standard
+
+postgres:
+  # Change this before installing -- committed here only because this is a
+  # local-learning project, never do this for anything real.
+  password: pdfapp_dev_pw

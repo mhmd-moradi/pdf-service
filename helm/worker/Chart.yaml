@@ -1,0 +1,5 @@
+apiVersion: v2
+name: worker
+description: URL-to-PDF service worker (queue consumer) and cleanup CronJob
+version: 0.1.0
+appVersion: "1.0"
