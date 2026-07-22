@@ -4,8 +4,8 @@ image:
   # repository/tag below are automatically updated by the CI workflow
   # (.github/workflows/build-and-deploy.yml) after each push to main.
   # Manual edits here will be overwritten on the next CI run.
-  repository: pdf-service-worker
-  tag: local
+  repository: ghcr.io/mhmd-moradi/pdf-service-worker
+  tag: "7534901b87d11deb46188fe5f9884a366a09cc5d"
   pullPolicy: IfNotPresent
 
 resources:
