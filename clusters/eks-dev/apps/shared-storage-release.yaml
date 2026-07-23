@@ -7,6 +7,10 @@ spec:
   interval: 5m
   targetNamespace: default
   releaseName: shared-storage
+  install:
+    disableWait: true
+  upgrade:
+    disableWait: true
   chart:
     spec:
       chart: ./helm/shared-storage
