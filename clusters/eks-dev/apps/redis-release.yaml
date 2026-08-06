@@ -7,6 +7,8 @@ spec:
   interval: 10m
   targetNamespace: default
   releaseName: redis
+  dependsOn:
+    - name: aws-load-balancer-controller
   chart:
     spec:
       chart: redis

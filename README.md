@@ -3,7 +3,7 @@
 A small service that takes a URL, renders it to a PDF using a headless browser,
 and lets you download the result. Built as infrastructure-learning scaffolding
 (EKS, Helm, GitOps, KEDA, CronJobs, observability) — the app itself is
-deliberately simple so the *infrastructure* is where the learning happens.
+deliberately simple so the _infrastructure_ is where the learning happens.
 
 ## Architecture
 
@@ -35,6 +35,7 @@ Frontend (HTML/JS) --> API (FastAPI) --> Postgres (job records)
 ### 1. Install Postgres and Redis
 
 **macOS (Homebrew):**
+
 ```bash
 brew install postgresql@16 redis
 brew services start postgresql@16
@@ -42,6 +43,7 @@ brew services start redis
 ```
 
 **Linux (Debian/Ubuntu):**
+
 ```bash
 sudo apt-get install postgresql redis-server
 sudo service postgresql start
@@ -108,18 +110,18 @@ it's a static file that talks to the API via `fetch`).
 
 ## Environment variables (all optional — sensible localhost defaults)
 
-| Variable | Default | Used by |
-|---|---|---|
-| `POSTGRES_HOST` | `localhost` | API, worker |
-| `POSTGRES_PORT` | `5432` | API, worker |
-| `POSTGRES_DB` | `pdfservice` | API, worker |
-| `POSTGRES_USER` | `pdfapp` | API, worker |
-| `POSTGRES_PASSWORD` | `pdfapp_dev_pw` | API, worker |
-| `REDIS_HOST` | `localhost` | API, worker |
-| `REDIS_PORT` | `6379` | API, worker |
-| `REDIS_QUEUE_NAME` | `pdf_jobs` | API, worker |
-| `RESULTS_DIR` | `./results` (path) | API, worker — must be the *same* path/volume for both |
-| `RENDER_TIMEOUT_MS` | `30000` | worker |
+| Variable            | Default            | Used by                                               |
+| ------------------- | ------------------ | ----------------------------------------------------- |
+| `POSTGRES_HOST`     | `localhost`        | API, worker                                           |
+| `POSTGRES_PORT`     | `5432`             | API, worker                                           |
+| `POSTGRES_DB`       | `pdfservice`       | API, worker                                           |
+| `POSTGRES_USER`     | `pdfapp`           | API, worker                                           |
+| `POSTGRES_PASSWORD` | `pdfapp_dev_pw`    | API, worker                                           |
+| `REDIS_HOST`        | `localhost`        | API, worker                                           |
+| `REDIS_PORT`        | `6379`             | API, worker                                           |
+| `REDIS_QUEUE_NAME`  | `pdf_jobs`         | API, worker                                           |
+| `RESULTS_DIR`       | `./results` (path) | API, worker — must be the _same_ path/volume for both |
+| `RENDER_TIMEOUT_MS` | `30000`            | worker                                                |
 
 This env-var-only config is intentional: moving to Kubernetes later means
 setting these via ConfigMaps/Secrets, not touching code. Same story for the
@@ -156,6 +158,7 @@ First run will take a while — the worker image in particular is large
 pre-installed. Subsequent runs are much faster since layers are cached.
 
 Once it's up:
+
 - API: http://localhost:8000
 - Frontend: http://localhost:8080
 - Postgres: localhost:5432 (same credentials as local dev)
@@ -163,7 +166,7 @@ Once it's up:
 
 Note the frontend's `index.html` still points `API_BASE` at
 `http://localhost:8000` — that's correct even in Compose, since the
-*browser* (not a container) is what calls the API, and port 8000 is
+_browser_ (not a container) is what calls the API, and port 8000 is
 published to your host machine either way.
 
 ### Stop it
@@ -251,16 +254,20 @@ helm install redis bitnami/redis \
 ```
 
 Wait for both to be ready:
+
 ```bash
 kubectl get pods -w
 ```
+
 (Ctrl+C once you see `postgres-postgresql-0` and `redis-master-0` both `Running`/`1/1`)
 
 **Verify the service names match what the charts expect** (they should, but
 confirm before moving on — chart versions change over time):
+
 ```bash
 kubectl get svc
 ```
+
 You're looking for something like `postgres-postgresql` (port 5432) and
 `redis-master` (port 6379). If yours differ, update
 `helm/api/values.yaml` and `helm/worker/values.yaml` (`env.postgresHost` /
@@ -298,9 +305,11 @@ You should see pods for api, worker, frontend, postgres, redis all
 
 The service name depends on the release name you used
 (`helm install frontend ./helm/frontend` → service `frontend-frontend`):
+
 ```bash
 minikube service frontend-frontend --url
 ```
+
 This prints a URL — open it in your browser.
 
 ### 8. Access the API directly (for curl testing)
@@ -308,6 +317,7 @@ This prints a URL — open it in your browser.
 ```bash
 kubectl port-forward svc/api-api 8000:8000
 ```
+
 Then in another terminal, the same curl commands from Phase 1/2 work
 against `http://localhost:8000`.
 
@@ -317,6 +327,7 @@ against `http://localhost:8000`.
 kubectl create job --from=cronjob/worker-cleanup manual-cleanup-test
 kubectl logs job/manual-cleanup-test
 ```
+
 Should show the same `"cleanup job starting"` / `"cleanup job finished"`
 JSON log lines you saw testing it locally.
 
@@ -429,6 +440,7 @@ to Public.
 
 Make a small change to, say, `frontend/index.html` (even just a comment),
 then:
+
 ```bash
 git add frontend/index.html
 git commit -m "test CI/CD pipeline"
@@ -436,6 +448,7 @@ git push
 ```
 
 Watch it happen:
+
 1. **GitHub** → your repo → Actions tab — watch the workflow build and push
    images, then commit an updated `values.yaml` back to `main`
 2. Flux notices that new commit within its polling interval and updates the
@@ -473,12 +486,12 @@ running anything.
 
 ### Cost estimate
 
-| Resource | Cost while running |
-|---|---|
-| EKS control plane | ~$0.10/hr flat |
-| 2x t3.small spot nodes | ~$0.01-0.02/hr total |
-| NAT Gateway (single, not per-AZ) | ~$0.045/hr + data |
-| **Total while running** | **~$0.15-0.20/hr** |
+| Resource                         | Cost while running   |
+| -------------------------------- | -------------------- |
+| EKS control plane                | ~$0.10/hr flat       |
+| 2x t3.small spot nodes           | ~$0.01-0.02/hr total |
+| NAT Gateway (single, not per-AZ) | ~$0.045/hr + data    |
+| **Total while running**          | **~$0.15-0.20/hr**   |
 
 If you `terraform destroy` at the end of every session and only run this a
 few hours a week, expect **$5-15/month**. Left running 24/7, expect
@@ -497,7 +510,7 @@ terraform apply -var="state_bucket_name=pdf-service-tfstate-YOUR_INITIALS_OR_RAN
 ```
 
 Pick a genuinely unique bucket name — S3 bucket names are global across
-*all* AWS accounts, not just yours. Write down the exact name it accepts.
+_all_ AWS accounts, not just yours. Write down the exact name it accepts.
 
 This creates the S3 bucket + DynamoDB table and stores **its own** state
 locally (`infra/bootstrap/terraform.tfstate`) — don't delete that file, and
@@ -527,12 +540,15 @@ not a hang.
 ```bash
 terraform output configure_kubectl
 ```
+
 Copy and run the command it prints (something like
 `aws eks update-kubeconfig --region eu-central-1 --name pdf-service-dev`),
 then confirm:
+
 ```bash
 kubectl get nodes
 ```
+
 Should show 2 nodes, `Ready`, after a minute or two.
 
 ### What's deliberately NOT here yet (later phases)
@@ -545,14 +561,72 @@ Should show 2 nodes, `Ready`, after a minute or two.
 
 ### Tear down (do this every session)
 
+**First, always clean up any Ingress resources** — once Phase 6 is set up,
+the AWS Load Balancer Controller creates real ALBs, target groups, and
+security groups directly in AWS, completely outside Terraform's state. If
+you skip this step, `terraform destroy` can get stuck for 15+ minutes (or
+fail outright) trying to delete subnets/the VPC while orphaned security
+groups or network interfaces from those leftover ALBs are still attached.
+
+```bash
+kubectl delete ingress --all
+```
+
+Wait ~30-60 seconds for the controller to actually tear down the ALB and
+its security groups in AWS before proceeding.
+
 ```bash
 cd infra/envs/dev
-terraform destroy
+terraform destroy -var="github_repo=YOUR_GITHUB_USERNAME/pdf-service"
 ```
+
 Confirm with `yes` when prompted. This removes the EKS cluster, node
-group, NAT Gateway, and VPC — the expensive stuff. It does **not** touch
-the S3 state bucket/DynamoDB table from step 1 (that's a separate
-Terraform config, untouched by this destroy).
+group, NAT Gateway, VPC, ECR repos, and IAM/OIDC resources — the expensive
+stuff. It does **not** touch the S3 state bucket/DynamoDB table from step
+1 (that's a separate Terraform config, untouched by this destroy).
+
+**If destroy still gets stuck** (forgot the `kubectl delete ingress` step,
+or a security group didn't finish cleaning up in time), find and remove
+the leftovers manually in a second terminal while destroy is still running
+— it'll pick back up once they're gone:
+
+```bash
+aws ec2 describe-security-groups --region eu-central-1 \
+  --filters "Name=vpc-id,Values=<your-vpc-id-from-terraform-output>" \
+  --query "SecurityGroups[].{ID:GroupId,Name:GroupName}" --output table
+```
+
+Delete anything that isn't named `default` (typically named like
+`k8s-default-<service>-...` or `k8s-traffic-<cluster>-...`):
+
+```bash
+aws ec2 delete-security-group --group-id sg-XXXXXXXX --region eu-central-1
+```
+
+Also worth checking for orphaned EBS volumes (from Postgres/Redis's PVCs —
+these don't block the VPC destroy, but they're real cost sitting there
+unnecessarily if left behind):
+
+```bash
+aws ec2 describe-volumes --region eu-central-1 \
+  --filters "Name=tag:kubernetes.io/cluster/pdf-service-dev,Values=owned" \
+  --query "Volumes[].{ID:VolumeId,State:State}" --output table
+```
+
+Delete any showing `available` (meaning detached, not in use):
+
+```bash
+aws ec2 delete-volume --volume-id vol-XXXXXXXX --region eu-central-1
+```
+
+**After any destroy, confirm AWS is genuinely clean:**
+
+```bash
+aws eks list-clusters --region eu-central-1
+aws ec2 describe-vpcs --region eu-central-1 --filters "Name=tag:Name,Values=pdf-service-dev-vpc"
+```
+
+Both should return empty.
 
 Next session, `terraform apply` again from `envs/dev` — same config, same
 state backend, cluster comes back identical.
@@ -609,6 +683,7 @@ Keep these visible — you'll paste them into two places in the next steps.
 
 GitHub repo → **Settings** → **Secrets and variables** → **Actions** →
 **Variables** tab → **New repository variable**:
+
 - Name: `AWS_GITHUB_ACTIONS_ROLE_ARN`
 - Value: the `github_actions_role_arn` output from step 2
 
@@ -619,6 +694,7 @@ can assume it, which the Terraform trust policy already restricts.)
 ### 4. Fill in the two placeholders in the Load Balancer Controller manifest
 
 Edit `clusters/eks-dev/apps/aws-lb-controller-release.yaml`:
+
 - `vpcId`: replace with the `vpc_id` output
 - `eks.amazonaws.com/role-arn`: replace with the `lb_controller_role_arn` output
 
@@ -645,8 +721,10 @@ and commit updated `values.yaml` files back to `main`.
 ```bash
 kubectl config current-context
 ```
+
 Should show something with `pdf-service-dev` in it. If it shows minikube,
 switch:
+
 ```bash
 kubectl config use-context $(kubectl config get-contexts -o name | grep pdf-service-dev)
 ```
@@ -677,6 +755,7 @@ first.
 ```bash
 kubectl get ingress
 ```
+
 This shows the `ADDRESS` column with each ALB's public DNS name (something
 like `k8s-default-api-xxxx.eu-central-1.elb.amazonaws.com`). Give AWS a
 few minutes after the Ingress is created for DNS to actually resolve.

@@ -7,6 +7,8 @@ spec:
   interval: 10m
   targetNamespace: default
   releaseName: postgres
+  dependsOn:
+    - name: aws-load-balancer-controller
   chart:
     spec:
       chart: postgresql
