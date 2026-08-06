@@ -13,6 +13,7 @@ spec:
   chart:
     spec:
       chart: aws-load-balancer-controller
+      version: "3.5.0"
       sourceRef:
         kind: HelmRepository
         name: eks-charts
@@ -25,3 +26,9 @@ spec:
       name: aws-load-balancer-controller
       annotations:
         eks.amazonaws.com/role-arn: "arn:aws:iam::668723997539:role/pdf-service-dev-lb-controller-role"
+    # Prevents the mutating webhook from hard-blocking ALL Service applies
+    # (including ClusterIP/headless services) when the LBC pod is temporarily
+    # unavailable (crashloop, rolling update, node eviction). Those services
+    # don't need LBC mutations; skipping mutation is safe.
+    webhookConfig:
+      failurePolicy: Ignore
