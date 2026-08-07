@@ -39,7 +39,7 @@
 <script>
   // In Kubernetes this becomes the API service's ClusterIP/Ingress URL.
   // Kept as a plain constant for now -- no build step needed for this frontend.
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = "http://k8s-default-apiapi-e54d4110b2-938222719.eu-central-1.elb.amazonaws.com";
 
   const form = document.getElementById("submit-form");
   const urlInput = document.getElementById("url-input");
