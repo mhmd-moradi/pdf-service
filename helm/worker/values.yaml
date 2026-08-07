@@ -1,3 +1,4 @@
+# KEDA will eventually override this dynamically based on Redis queue depth; 1 is the baseline
 replicaCount: 1
 
 image:
@@ -8,14 +9,20 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 
+# Worker needs more resources than the API — it runs a full Chromium browser process per job
 resources:
   requests:
+    # 0.25 cores minimum; Chromium is CPU-hungry during page render
     cpu: 250m
+    # Chromium + the rendered page DOM can easily use 200-400 MB
     memory: 512Mi
   limits:
+    # 1 full core ceiling
     cpu: 1000m
+    # If a page leaks memory and this is hit, the pod is OOMKilled and restarted cleanly
     memory: 1Gi
 
+# Identical variable names to the API's env block — both read config.py which expects these exact names
 env:
   postgresHost: "postgres-postgresql"
   postgresPort: "5432"
@@ -28,15 +35,20 @@ env:
 
 postgresSecretName: "postgres-credentials"
 postgresSecretKey: "password"
+# Same PVC as the API — shared volume is how worker writes and API reads the same PDF file
 resultsPvcName: "pdf-results"
 
 cronjob:
+  # Gates the CronJob resource — set to false to disable cleanup without removing the chart
   enabled: true
   # Every day at 3am
+  # Standard cron syntax: minute hour day-of-month month day-of-week; 0 3 * * * = 03:00 every day
   schedule: "0 3 * * *"
+  # Passed to cleanup.py as RETENTION_DAYS env var; files older than this are deleted
   retentionDays: 7
   # CronJobs don't need the full worker resource budget -- it's a quick
   # DB query + a few file deletes, not a browser render.
+  # Separate resource block so the cleanup job doesn't consume the same budget as a browser-render worker
   resources:
     requests:
       cpu: 100m

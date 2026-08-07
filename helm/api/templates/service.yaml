@@ -1,14 +1,21 @@
+# Service is a core resource (no API group prefix), hence just v1
 apiVersion: v1
 kind: Service
 metadata:
+  # Same name as the Deployment; other pods reach the API at this hostname inside the cluster
   name: {{ include "api.fullname" . }}
   labels:
     {{- include "api.labels" . | nindent 4 }}
 spec:
+  # ClusterIP — only reachable inside the cluster; external traffic enters through the Ingress
   type: {{ .Values.service.type }}
   ports:
+    # Port the Service listens on (8000); what other pods and the Ingress backend reference
     - port: {{ .Values.service.port }}
+      # Port on the Pod to forward traffic to; matches containerPort in deployment.yaml
       targetPort: 8000
       protocol: TCP
   selector:
+    # Kubernetes matches Pods with these labels to receive traffic from this Service;
+    # must match the pod template labels in deployment.yaml
     {{- include "api.labels" . | nindent 4 }}

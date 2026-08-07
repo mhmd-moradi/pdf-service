@@ -1,3 +1,4 @@
+{{/* entire file is gated — if ingress.enabled is false (minikube default) no Ingress object is created at all */}}
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -6,20 +7,29 @@ metadata:
   labels:
     {{- include "api.labels" . | nindent 4 }}
   annotations:
+    # EKS overrides annotations in the Flux HelmRelease with ALB-specific settings
+    # like scheme, target-type, certificate ARN
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
 spec:
+  # "alb" — tells Kubernetes which Ingress controller owns this object;
+  # the AWS LBC watches for IngressClass "alb"
   ingressClassName: {{ .Values.ingress.className }}
   rules:
+    {{/* if host is empty, omit the host field entirely — the rule matches all hostnames */}}
     - {{- if .Values.ingress.host }}
       host: {{ .Values.ingress.host }}
       {{- end }}
       http:
         paths:
+          # Catch-all path; all requests to this host/ALB go to the API Service
           - path: /
+            # Prefix = /foo matches /foo, /foo/bar, etc.; Exact would only match /
             pathType: Prefix
             backend:
               service:
+                # The Service to route to — must match the Service name in service.yaml
                 name: {{ include "api.fullname" . }}
                 port:
+                  # The Service port (8000), not the pod port
                   number: {{ .Values.service.port }}
 {{- end }}

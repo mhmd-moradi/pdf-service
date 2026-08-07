@@ -1,24 +1,39 @@
+# The API group + version for this resource; Deployment has been stable in apps/v1 since Kubernetes 1.9
 apiVersion: apps/v1
+# Tells Kubernetes this is a Deployment (manages a ReplicaSet which manages Pods); not a bare Pod, StatefulSet, DaemonSet, etc.
 kind: Deployment
 metadata:
+  # Calls the helper from _helpers.tpl; renders to e.g. "pdf-release-api";
+  # `.` passes the full template context (Values, Release, etc.)
   name: {{ include "api.fullname" . }}
   labels:
+    # `nindent 4` adds a newline then indents the block by 4 spaces to match YAML nesting;
+    # the `-` before include strips the leading newline the define would otherwise emit
     {{- include "api.labels" . | nindent 4 }}
 spec:
+  # Reads from values.yaml; can be overridden in the Flux HelmRelease without changing the chart
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
+      # Selector must exactly match the pod template labels below;
+      # Kubernetes uses this to know which Pods belong to this Deployment
       {{- include "api.labels" . | nindent 6 }}
+  # Pod template — everything under here describes the Pod that gets created for each replica
   template:
     metadata:
       labels:
+        # Must match selector.matchLabels above; also used by Services to route traffic to these pods
         {{- include "api.labels" . | nindent 8 }}
     spec:
       containers:
         - name: api
+          # Quoted to handle tags that might start with a digit (YAML would parse them as numbers otherwise)
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          # IfNotPresent on minikube (image is local); Always on EKS (always pull from ECR to get the latest tag)
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
+            # Documents the port the process listens on; doesn't open a firewall hole by itself,
+            # but used by Services and observability tooling
             - containerPort: 8000
           env:
             - name: POSTGRES_HOST
@@ -30,9 +45,13 @@ spec:
             - name: POSTGRES_USER
               value: {{ .Values.env.postgresUser | quote }}
             - name: POSTGRES_PASSWORD
+              # Secret env var: value is NOT embedded in the Deployment spec;
+              # Kubernetes injects it at runtime from the named Secret
               valueFrom:
                 secretKeyRef:
+                  # Secret object name ("postgres-credentials")
                   name: {{ .Values.postgresSecretName }}
+                  # Key inside the Secret's data map ("password")
                   key: {{ .Values.postgresSecretKey }}
             - name: REDIS_HOST
               value: {{ .Values.env.redisHost | quote }}
@@ -43,26 +62,91 @@ spec:
             - name: RESULTS_DIR
               value: {{ .Values.env.resultsDir | quote }}
           volumeMounts:
+            # Must match the volume name defined in the volumes block below
             - name: results
+              # The path INSIDE the container where the PVC is mounted; must match RESULTS_DIR env var
               mountPath: {{ .Values.env.resultsDir }}
           # Kubernetes probes -- this is the payoff for having built /health
           # in Phase 1. livenessProbe restarts the pod if it stops
           # responding; readinessProbe controls whether it receives traffic.
+          # If this fails repeatedly, Kubernetes kills and restarts the pod; catches hangs and deadlocks
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
+            # Wait 5s after container start before first check; gives uvicorn time to start up
             initialDelaySeconds: 5
+            # Check every 10s
             periodSeconds: 10
+          # If this fails, Kubernetes removes the pod from the Service's Endpoints so it stops receiving traffic;
+          # catches "started but not ready" states
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
+            # Readiness can fire sooner than liveness; we want to stop traffic quickly if the pod isn't ready
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
+            # `toYaml` converts the Go map from values.yaml into YAML text;
+            # `nindent 12` indents it to fit inside the container spec
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
+        # Logical volume name used to link the volumeMount above to this PVC
         - name: results
           persistentVolumeClaim:
+            # References the PVC created by helm/shared-storage; this is why shared-storage must be installed first
             claimName: {{ .Values.resultsPvcName }}
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"  # quoted to handle tags that might start with a digit (YAML would parse them as numbers otherwise)
+          imagePullPolicy: {{ .Values.image.pullPolicy }}  # IfNotPresent on minikube (image is local); Always on EKS (always pull from ECR to get the latest tag)
+          ports:
+            - containerPort: 8000  # documents the port the process listens on; doesn't open a firewall hole by itself, but used by Services and observability tooling
+          env:
+            - name: POSTGRES_HOST
+              value: {{ .Values.env.postgresHost | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.env.postgresPort | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.env.postgresDb | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.env.postgresUser | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:            # secret env var: value is NOT embedded in the Deployment spec; Kubernetes injects it at runtime from the named Secret
+                secretKeyRef:
+                  name: {{ .Values.postgresSecretName }}   # Secret object name ("postgres-credentials")
+                  key: {{ .Values.postgresSecretKey }}     # key inside the Secret's data map ("password")
+            - name: REDIS_HOST
+              value: {{ .Values.env.redisHost | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.env.redisPort | quote }}
+            - name: REDIS_QUEUE_NAME
+              value: {{ .Values.env.redisQueueName | quote }}
+            - name: RESULTS_DIR
+              value: {{ .Values.env.resultsDir | quote }}
+          volumeMounts:
+            - name: results         # must match the volume name defined in the volumes block below
+              mountPath: {{ .Values.env.resultsDir }}  # the path INSIDE the container where the PVC is mounted; must match RESULTS_DIR env var
+          # Kubernetes probes -- this is the payoff for having built /health
+          # in Phase 1. livenessProbe restarts the pod if it stops
+          # responding; readinessProbe controls whether it receives traffic.
+          livenessProbe:            # if this fails repeatedly, Kubernetes kills and restarts the pod; catches hangs and deadlocks
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5  # wait 5s after container start before first check; gives uvicorn time to start up
+            periodSeconds: 10       # check every 10s
+          readinessProbe:           # if this fails, Kubernetes removes the pod from the Service's Endpoints so it stops receiving traffic; catches "started but not ready" states
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3  # readiness can fire sooner than liveness; we want to stop traffic quickly if the pod isn't ready
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}  # `toYaml` converts the Go map from values.yaml into YAML text; `nindent 12` indents it to fit inside the container spec
+      volumes:
+        - name: results             # logical volume name used to link the volumeMount above to this PVC
+          persistentVolumeClaim:
+            claimName: {{ .Values.resultsPvcName }}  # references the PVC created by helm/shared-storage; this is why shared-storage must be installed first

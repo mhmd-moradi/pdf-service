@@ -1,14 +1,23 @@
+# PersistentVolumeClaim is a core resource
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  # Hardcoded name (not templated with Release.Name) so the api and worker charts
+  # can reference it by the exact string "pdf-results" in resultsPvcName
   name: pdf-results
   labels:
     app.kubernetes.io/name: shared-storage
+    # .Release.Service = "Helm"; standard label that tools use to identify Helm-managed resources
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
   accessModes:
+    # ReadWriteOnce — only one node can mount for writing;
+    # fine for single-node minikube and single-node EKS test clusters
     - {{ .Values.storage.accessMode }}
+  # "standard" on minikube (hostPath); overridden to "gp3" in the EKS Flux HelmRelease —
+  # the StorageClass is what actually provisions the EBS volume
   storageClassName: {{ .Values.storage.storageClassName }}
   resources:
     requests:
+      # How much disk to request; the StorageClass provisioner creates a volume of at least this size
       storage: {{ .Values.storage.size }}

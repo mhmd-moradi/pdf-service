@@ -1,72 +1,110 @@
-services: # top-level key — each child is one container Compose will manage
-  postgres: # service name; also becomes the DNS hostname other containers use (e.g. POSTGRES_HOST: postgres)
-    image: postgres:16 # use the official Postgres 16 image from Docker Hub; no build step needed — this image is pulled, not built
-    environment: # env vars injected into the container at startup; Postgres's entrypoint reads these to create the user/db on first boot
-      POSTGRES_USER: pdfapp # the DB user the app will connect as
-      POSTGRES_PASSWORD: pdfapp_dev_pw # password for that user
-      POSTGRES_DB: pdfservice # database to create; the app connects to this db
+# Top-level key — each child is one container Compose will manage
+services:
+  # Service name; also becomes the DNS hostname other containers use (e.g. POSTGRES_HOST: postgres)
+  postgres:
+    # Use the official Postgres 16 image from Docker Hub; no build step needed — this image is pulled, not built
+    image: postgres:16
+    # Env vars injected into the container at startup; Postgres's entrypoint reads these to create the user/db on first boot
+    environment:
+      # The DB user the app will connect as
+      POSTGRES_USER: pdfapp
+      # Password for that user
+      POSTGRES_PASSWORD: pdfapp_dev_pw
+      # Database to create; the app connects to this db
+      POSTGRES_DB: pdfservice
     ports:
-      - "5432:5432" # host_port:container_port — exposes Postgres to your laptop so you can connect with psql or a GUI tool; not needed for container-to-container traffic
+      # host_port:container_port — exposes Postgres to your laptop so you can connect with psql or a GUI tool;
+      # not needed for container-to-container traffic
+      - "5432:5432"
     volumes:
       # Postgres's official image auto-runs any .sql file placed here on
       # first startup ONLY (won't re-run on restart) — this replaces the
       # manual `psql -f db/schema.sql` step from local dev.
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql # bind mount: the host file ./db/schema.sql appears at that path inside the container; Postgres's entrypoint runs everything in initdb.d/ on first boot
-      - postgres_data:/var/lib/postgresql/data # named volume: Postgres stores its data files here; a named volume persists across `docker compose down` (unlike a bind mount it lives in Docker's own storage area)
-    healthcheck: # Compose uses this to know when Postgres is actually ready to accept connections (not just "container started")
-      test: ["CMD-SHELL", "pg_isready -U pdfapp -d pdfservice"] # pg_isready exits 0 only when Postgres accepts connections on that user/db; CMD-SHELL lets us use shell syntax (env var expansion, pipes) unlike CMD
-      interval: 5s # run the check every 5 seconds
-      timeout: 5s # if pg_isready takes longer than 5s, count it as a failure
-      retries: 5 # mark the container unhealthy (and block dependents) only after 5 consecutive failures
-
-  redis: # service name; becomes hostname "redis" for other containers
-    image: redis:7-alpine # Redis 7 on Alpine — very small image (~10 MB); no persistence config since Redis here is only used as a transient queue
-    ports:
-      - "6379:6379" # exposes Redis to the host for debugging; not required for container-to-container traffic
+      # Bind mount: the host file ./db/schema.sql appears at that path inside the container;
+      # Postgres's entrypoint runs everything in initdb.d/ on first boot
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      # Named volume: Postgres stores its data files here; persists across `docker compose down`
+      # (unlike a bind mount it lives in Docker's own storage area)
+      - postgres_data:/var/lib/postgresql/data
+    # Compose uses this to know when Postgres is actually ready to accept connections (not just "container started")
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"] # redis-cli ping returns "PONG" and exits 0 when Redis is ready; CMD form (no shell) is fine here since there's no shell syntax needed
+      # pg_isready exits 0 only when Postgres accepts connections on that user/db;
+      # CMD-SHELL lets us use shell syntax (env var expansion, pipes) unlike CMD
+      test: ["CMD-SHELL", "pg_isready -U pdfapp -d pdfservice"]
+      # Run the check every 5 seconds
+      interval: 5s
+      # If pg_isready takes longer than 5s, count it as a failure
+      timeout: 5s
+      # Mark the container unhealthy (and block dependents) only after 5 consecutive failures
+      retries: 5
+
+  # Service name; becomes hostname "redis" for other containers
+  redis:
+    # Redis 7 on Alpine — very small image (~10 MB); no persistence config since Redis here is only used as a transient queue
+    image: redis:7-alpine
+    ports:
+      # Exposes Redis to the host for debugging; not required for container-to-container traffic
+      - "6379:6379"
+    healthcheck:
+      # redis-cli ping returns "PONG" and exits 0 when Redis is ready;
+      # CMD form (no shell) is fine here since there's no shell syntax needed
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   api:
-    build: ./api # no `image:` key — Compose builds the image from ./api/Dockerfile; the result is cached locally
+    # No `image:` key — Compose builds the image from ./api/Dockerfile; the result is cached locally
+    build: ./api
     ports:
-      - "8000:8000" # exposes the FastAPI server to the host at localhost:8000
+      # Exposes the FastAPI server to the host at localhost:8000
+      - "8000:8000"
     environment:
       # Note: hostnames here are the Compose SERVICE NAMES ("postgres",
       # "redis"), not "localhost" -- Compose's internal DNS resolves these
       # to the right container automatically.
-      POSTGRES_HOST: postgres # "postgres" resolves to the postgres container's IP inside the Compose network — this is Compose's built-in DNS
-      POSTGRES_PORT: "5432" # string, not integer — env vars are always strings; api/config.py reads this with os.getenv() which returns a string anyway
+      # "postgres" resolves to the postgres container's IP inside the Compose network — this is Compose's built-in DNS
+      POSTGRES_HOST: postgres
+      # String, not integer — env vars are always strings; api/config.py reads this with os.getenv() which returns a string anyway
+      POSTGRES_PORT: "5432"
       POSTGRES_DB: pdfservice
       POSTGRES_USER: pdfapp
       POSTGRES_PASSWORD: pdfapp_dev_pw
-      REDIS_HOST: redis # "redis" resolves to the redis container via Compose DNS
+      # "redis" resolves to the redis container via Compose DNS
+      REDIS_HOST: redis
       REDIS_PORT: "6379"
-      RESULTS_DIR: /app/results # path INSIDE the container where PDFs are stored; must match the volume mount target below
+      # Path INSIDE the container where PDFs are stored; must match the volume mount target below
+      RESULTS_DIR: /app/results
     volumes:
       # Shared with the worker so the API can serve files the worker writes.
-      - results_data:/app/results # named volume mounted at /app/results; the worker mounts the SAME volume — this is the only way two separate containers can share files on the same host
+      # Named volume mounted at /app/results; the worker mounts the SAME volume —
+      # this is the only way two separate containers can share files on the same host
+      - results_data:/app/results
     depends_on:
       postgres:
-        condition: service_healthy # waits until postgres passes its healthcheck before starting the api container; prevents "connection refused" errors on startup
+        # Waits until postgres passes its healthcheck before starting the api container; prevents "connection refused" errors on startup
+        condition: service_healthy
       redis:
-        condition: service_healthy # same for redis
+        # Same for redis
+        condition: service_healthy
 
   worker:
-    build: ./worker # builds from ./worker/Dockerfile (the Playwright image)
+    # Builds from ./worker/Dockerfile (the Playwright image)
+    build: ./worker
     environment:
-      POSTGRES_HOST: postgres # same env var names as the API — both services use the same config.py pattern so the variable names must match
+      # Same env var names as the API — both services use the same config.py pattern so the variable names must match
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: pdfservice
       POSTGRES_USER: pdfapp
       POSTGRES_PASSWORD: pdfapp_dev_pw
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      RESULTS_DIR: /app/results # must match the volume mount target below AND the API's RESULTS_DIR — both must point to the same named volume
+      # Must match the volume mount target below AND the API's RESULTS_DIR — both must point to the same named volume
+      RESULTS_DIR: /app/results
     volumes:
-      - results_data:/app/results # same named volume as the API — worker writes PDFs here, API reads and serves them
+      # Same named volume as the API — worker writes PDFs here, API reads and serves them
+      - results_data:/app/results
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,10 +112,15 @@ services: # top-level key — each child is one container Compose will manage
         condition: service_healthy
 
   frontend:
-    build: ./frontend # builds from ./frontend/Dockerfile (nginx image)
+    # Builds from ./frontend/Dockerfile (nginx image)
+    build: ./frontend
     ports:
-      - "8080:80" # host port 8080 → container port 80 (nginx default); 8000 is already taken by the API, so 8080 avoids the conflict
+      # Host port 8080 → container port 80 (nginx default); 8000 is already taken by the API, so 8080 avoids the conflict
+      - "8080:80"
 
-volumes: # named volume declarations — Compose creates these automatically; they live in Docker's storage area (not in your project folder)
-  postgres_data: # stores Postgres data files; survives `docker compose down` but is deleted by `docker compose down -v`
-  results_data: # shared between api and worker containers; also survives restarts
+# Named volume declarations — Compose creates these automatically; they live in Docker's storage area (not in your project folder)
+volumes:
+  # Stores Postgres data files; survives `docker compose down` but is deleted by `docker compose down -v`
+  postgres_data:
+  # Shared between api and worker containers; also survives restarts
+  results_data:

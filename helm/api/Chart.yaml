@@ -1,6 +1,10 @@
+# Helm chart API version — v2 means Helm 3+ only (v1 was for Helm 2); nearly everything uses v2 now
 apiVersion: v2
+# Chart name; used as the default prefix for Kubernetes resource names when you run `helm install`
 name: api
 description: URL-to-PDF service API
+# Chart version — this is the version of the packaging, not the app; bump this when you change the chart itself (templates, values structure)
 version: 0.1.0
+# Informational only — documents which version of the application this chart packages; doesn't affect how resources are created
 appVersion: "1.0"
 

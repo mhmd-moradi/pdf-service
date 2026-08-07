@@ -5,9 +5,13 @@ metadata:
   labels:
     {{- include "frontend.labels" . | nindent 4 }}
 spec:
+  # NodePort on minikube: Kubernetes allocates a port in the 30000-32767 range on every node;
+  # `minikube service frontend` builds a tunnel to it
   type: {{ .Values.service.type }}
   ports:
+    # Service port (80)
     - port: {{ .Values.service.port }}
+      # nginx port inside the container
       targetPort: 80
       protocol: TCP
   selector:

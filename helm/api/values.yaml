@@ -1,32 +1,46 @@
+# How many API pod replicas to run; overridden per-environment in the Flux HelmRelease values block
 replicaCount: 1
 
 image:
   # repository/tag below are automatically updated by the CI workflow
   # (.github/workflows/build-and-deploy.yml) after each push to main.
   # Manual edits here will be overwritten on the next CI run.
+  # ECR repo URI on EKS; on minikube this is just a local image name loaded into minikube's Docker daemon
   repository: pdf-service-api
+  # CI replaces this with the Git commit SHA on each push so every deploy is traceable
   tag: local
   # Built locally into minikube's Docker daemon (see README) rather than
   # pulled from a registry -- IfNotPresent avoids Kubernetes trying (and
   # failing) to pull from Docker Hub for an image name it doesn't own.
+  # Always = always pull from registry; IfNotPresent = use local cache if the tag already exists; Never = fail if not cached
   pullPolicy: IfNotPresent
 
 service:
+  # ClusterIP = internal-only; only reachable from inside the cluster — traffic enters from the Ingress, not directly from the internet
   type: ClusterIP
+  # The port the Service listens on (and forwards to the pod's containerPort 8000)
   port: 8000
 
 # Off by default (Phase 3 minikube uses port-forward instead). EKS enables
 # this to expose the API through the AWS Load Balancer Controller.
 ingress:
+  # Gates the entire Ingress resource — see ingress.yaml where `{{- if .Values.ingress.enabled }}` wraps the whole file
   enabled: false
+  # Tells Kubernetes which Ingress controller to use; "alb" = AWS Load Balancer Controller provisions a real ALB
   className: alb
+  # Empty by default; EKS overrides this in the Flux HelmRelease with e.g. alb.ingress.kubernetes.io/scheme: internet-facing
   annotations: {}
+  # Empty = the Ingress rule matches all hostnames; set to e.g. "api.example.com" for host-based routing
   host: ""
 
 resources:
+  # Minimum guaranteed resources; Kubernetes uses these for scheduling (finding a node with enough capacity)
   requests:
+    # 100 millicores = 0.1 of one CPU core
     cpu: 100m
+    # Mebibytes (1 MiB = 1024² bytes); not megabytes
     memory: 128Mi
+  # Hard ceiling; pod is CPU-throttled at the limit and OOMKilled if it exceeds the memory limit
   limits:
     cpu: 500m
     memory: 256Mi
@@ -35,20 +49,26 @@ env:
   # NOTE: these hostnames depend on the release names you use when
   # installing the Bitnami postgresql/redis charts. Verify with
   # `kubectl get svc` and adjust here if different.
+  # Bitnami chart creates a Service named <release>-postgresql; "postgres" is the HelmRelease releaseName in Flux
   postgresHost: "postgres-postgresql"
   postgresPort: "5432"
   postgresDb: "pdfservice"
   postgresUser: "pdfapp"
+  # Bitnami standalone redis creates a Service named <release>-master; "redis" is the HelmRelease releaseName
   redisHost: "redis-master"
   redisPort: "6379"
   redisQueueName: "pdf_jobs"
+  # Path INSIDE the pod container; must match the PVC mountPath in deployment.yaml
   resultsDir: "/app/results"
 
 # Must match the key used when creating the postgres-credentials Secret
 # (see helm/api/README note in the main project README).
+# Name of the Kubernetes Secret created by helm/shared-storage/templates/postgres-secret.yaml
 postgresSecretName: "postgres-credentials"
+# The key inside that Secret whose value is the DB password
 postgresSecretKey: "password"
 
 # Name of the PVC created by the shared-storage chart -- must be installed
 # before this chart, or the pod will stay Pending waiting for the volume.
+# Must exactly match metadata.name in shared-storage/templates/pvc.yaml
 resultsPvcName: "pdf-results"

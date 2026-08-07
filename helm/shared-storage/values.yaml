@@ -1,9 +1,17 @@
 storage:
+  # How much disk to request for the PDF results volume
   size: 1Gi
+  # RWO = only one node can mount this volume at a time for writing;
+  # acceptable here because in Phase 3 API and worker run on the same node;
+  # becomes a problem in multi-node EKS (which is why Phase 9 moves to S3)
   accessMode: ReadWriteOnce
+  # "standard" = minikube's default storage class (hostPath provisioner);
+  # EKS overrides this to "gp3" in the Flux HelmRelease values
   storageClassName: standard
 
 postgres:
   # Change this before installing -- committed here only because this is a
   # local-learning project, never do this for anything real.
+  # Written into a Kubernetes Secret by postgres-secret.yaml;
+  # the API and worker Deployments read it from there via secretKeyRef
   password: pdfapp_dev_pw

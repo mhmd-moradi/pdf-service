@@ -5,6 +5,8 @@ metadata:
   labels:
     {{- include "worker.labels" . | nindent 4 }}
 spec:
+  # KEDA will later create a ScaledObject that overrides this at runtime based on Redis queue depth;
+  # this value is the fallback when KEDA is not installed
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
@@ -19,13 +21,17 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            # Calls the helper from _helpers.tpl instead of repeating the env block inline —
+            # the CronJob uses the same include
             {{- include "worker.env" . | nindent 12 }}
           volumeMounts:
             - name: results
+              # Worker writes PDFs here; same PVC as the API so the file is immediately readable by the API download endpoint
               mountPath: {{ .Values.env.resultsDir }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: results
           persistentVolumeClaim:
+            # Same PVC name as the API chart — both pods mount the same physical volume
             claimName: {{ .Values.resultsPvcName }}

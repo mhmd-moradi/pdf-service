@@ -9,20 +9,28 @@ image:
   pullPolicy: IfNotPresent
 
 service:
+  # NodePort = Kubernetes allocates a random port (30000-32767) on every node's IP;
+  # `minikube service frontend` tunnels to it automatically;
+  # contrast with the API's ClusterIP which is cluster-internal only
   type: NodePort
+  # nginx listens on 80 inside the container
   port: 80
 
 # Ingress is off by default (minikube uses the NodePort service above via
 # `minikube service`). EKS enables this instead, routing through the AWS
 # Load Balancer Controller to a real ALB.
 ingress:
+  # On EKS this is set to true in the Flux HelmRelease;
+  # the NodePort service stays but traffic enters through the ALB Ingress instead
   enabled: false
   className: alb
   annotations: {}
   host: ""
 
+# nginx serving a single static HTML file is extremely lightweight
 resources:
   requests:
+    # 0.05 cores
     cpu: 50m
     memory: 64Mi
   limits:

@@ -19,6 +19,9 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
+            # nginx default port
             - containerPort: 80
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          # No env vars, no volumeMounts, no probes — nginx serving a static file
+          # has no external dependencies to check and nothing to configure at runtime.

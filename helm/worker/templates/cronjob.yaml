@@ -1,42 +1,65 @@
+{{/* entire CronJob is optional — set cronjob.enabled: false to skip creating it without uninstalling the chart */}}
 {{- if .Values.cronjob.enabled }}
+# CronJob is in the batch API group; v1 is stable since Kubernetes 1.21
 apiVersion: batch/v1
 kind: CronJob
 metadata:
+  # e.g. "pdf-release-cleanup"; distinct from the worker Deployment name so both can coexist
   name: {{ .Release.Name }}-cleanup
   labels:
     {{- include "worker.labels" . | nindent 4 }}
 spec:
+  # Standard Unix cron format; "0 3 * * *" = 03:00 every day in the cluster's local timezone
   schedule: {{ .Values.cronjob.schedule | quote }}
   # Prevents overlapping runs if one cleanup takes longer than expected
   # and the next scheduled time arrives before it finishes.
+  # Forbid = skip the new run if the previous one is still going;
+  # Allow = run them in parallel; Replace = kill the old one and start fresh
   concurrencyPolicy: Forbid
+  # Keep the last 3 successful Job objects (and their pod logs); older ones are deleted automatically
   successfulJobsHistoryLimit: 3
+  # Keep the last 3 failed Jobs for debugging; without this, failed Job records pile up forever
   failedJobsHistoryLimit: 3
+  # CronJob creates a Job on each schedule tick; this is the template for that Job
   jobTemplate:
     spec:
       # Don't let a stuck cleanup job run forever
+      # Kill the Job if it hasn't finished within 5 minutes;
+      # prevents a hung cleanup from blocking the next scheduled run
       activeDeadlineSeconds: 300
+      # Job creates a Pod from this template
       template:
         spec:
+          # CronJob pods must use OnFailure or Never (not Always);
+          # OnFailure = restart the pod if it exits non-zero, up to backoffLimit times
           restartPolicy: OnFailure
           containers:
             - name: cleanup
+              # SAME image as the worker — cleanup.py is already in that image
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               # Overrides the image's default CMD (worker.py) to run the
               # cleanup script instead -- same image, different job.
+              # command overrides the Dockerfile's CMD; the image ships both worker.py and cleanup.py,
+              # we just choose which to run here
               command: ["python3", "cleanup.py"]
               env:
+                # Reuses the same env helper as the Deployment;
+                # cleanup.py needs DB creds to delete job records
                 {{- include "worker.env" . | nindent 16 }}
                 - name: RETENTION_DAYS
+                  # Extra env var specific to cleanup; not in the shared worker.env helper
                   value: {{ .Values.cronjob.retentionDays | quote }}
               volumeMounts:
                 - name: results
+                  # cleanup.py deletes old PDF files from this path
                   mountPath: {{ .Values.env.resultsDir }}
               resources:
+                # Uses cronjob.resources, not the main worker resources block — cleanup is cheap
                 {{- toYaml .Values.cronjob.resources | nindent 16 }}
           volumes:
             - name: results
               persistentVolumeClaim:
+                # Same PVC as the worker and API; cleanup.py needs access to the files it will delete
                 claimName: {{ .Values.resultsPvcName }}
 {{- end }}
