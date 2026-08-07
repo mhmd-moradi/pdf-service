@@ -811,3 +811,133 @@ downloads from. Try again on a normal home/office network connection.
 **Worker starts but jobs stay "pending" forever**
 Check the worker's terminal for errors — most likely Redis isn't reachable,
 or the queue name doesn't match between API and worker config.
+
+## Phase 7: Migrate to RDS
+
+Moves Postgres out of the cluster entirely, onto AWS's managed database
+service. This also happens to remove one whole class of problem you hit in
+Phase 6 — RDS isn't a Pod, so it can never collide with EBS Multi-Attach or
+node-affinity scheduling the way the in-cluster Postgres StatefulSet did.
+
+### 1. Add the RDS resources and apply
+
+Copy `rds.tf` into `infra/envs/dev/`, merge the `vpc_cidr` output into
+`infra/modules/vpc/outputs.tf`, and merge the `rds_endpoint` output into
+`infra/envs/dev/outputs.tf`.
+
+```bash
+cd infra/envs/dev
+terraform apply -var="github_repo=YOUR_GITHUB_USERNAME/pdf-service"
+```
+
+This provisions a `db.t4g.micro` Postgres instance — review the plan
+before confirming, same habit as always.
+
+### 2. Get the endpoint
+
+```bash
+terraform output rds_endpoint
+```
+
+### 3. Apply the schema to RDS (one-time, manual)
+
+RDS doesn't have Bitnami's automatic `initdb.scripts` convenience, and it's
+not publicly reachable (deliberately — `publicly_accessible = false`), so
+this has to run from _inside_ the VPC. Easiest way: a short-lived pod using
+the official Postgres image, piping `schema.sql` in over stdin:
+
+```bash
+cat db/schema.sql | kubectl run psql-client --rm -i --tty=false \
+  --image=postgres:16 --restart=Never \
+  --env="PGPASSWORD=pdfapp_dev_pw" -- \
+  psql -h $(terraform output -raw rds_endpoint) -U pdfapp -d pdfservice
+```
+
+Confirm it worked:
+
+```bash
+kubectl run psql-client --rm -it --image=postgres:16 --restart=Never \
+  --env="PGPASSWORD=pdfapp_dev_pw" -- \
+  psql -h $(terraform output -raw rds_endpoint) -U pdfapp -d pdfservice -c "\dt"
+```
+
+Should show the `jobs` table.
+
+### 4. Point api/worker at RDS instead of the in-cluster Postgres
+
+Replace `clusters/eks-dev/apps/api-release.yaml` and
+`clusters/eks-dev/apps/worker-release.yaml` with the updated versions —
+each now has an `env.postgresHost` override and no longer lists `postgres`
+under `dependsOn`. Fill in the real endpoint from step 2 in both files.
+
+### 5. Remove the in-cluster Postgres
+
+Delete `clusters/eks-dev/apps/postgres-release.yaml` entirely. Since
+`prune: true` is set on the Kustomization, Flux will uninstall the
+in-cluster Postgres release automatically once this file is gone from Git.
+
+**Note on your existing job history:** any jobs recorded in the old
+in-cluster Postgres are on a different database now — this migration
+starts fresh, it doesn't copy old data over. For a learning project that's
+fine; if you cared about the old rows, you'd `pg_exec` a `pg_dump` from
+the old pod before deleting its release, then `pg_restore` into RDS. Not
+needed here.
+
+### 6. Push and reconcile
+
+```bash
+git add infra/ clusters/eks-dev/apps/
+git commit -m "Phase 7: migrate to RDS"
+git push
+
+flux reconcile source git pdf-service
+flux reconcile helmrelease api -n flux-system
+flux reconcile helmrelease worker -n flux-system
+flux get helmreleases -A
+kubectl get pods
+```
+
+You should see the `postgres-postgresql-0` pod disappear entirely, and
+`api-api`/`worker-worker` come up pointed at RDS.
+
+### 7. Verify end to end
+
+```bash
+kubectl port-forward svc/api-api 8000:8000
+```
+
+```bash
+curl -X POST http://localhost:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+curl http://localhost:8000/jobs
+```
+
+Confirm a job actually completes. Then also test via the real ALB URL in
+your browser, same as Phase 6.
+
+### 8. Clean up the orphaned EBS volume
+
+The old in-cluster Postgres's PVC is **not** automatically deleted when
+its HelmRelease is removed (same "protect stateful data" default you saw
+in Phase 6's teardown) — it'll sit there as orphaned, billable storage
+unless removed manually:
+
+```bash
+kubectl get pvc
+```
+
+If `data-postgres-postgresql-0` still shows up, delete it:
+
+```bash
+kubectl delete pvc data-postgres-postgresql-0
+```
+
+### Cost note
+
+`db.t4g.micro` runs roughly $0.016/hr (~$12/month if left running
+constantly) — on top of everything else, this is one more thing
+`terraform destroy` needs to tear down between sessions. It's included in
+the same `envs/dev` destroy/apply cycle, nothing extra to remember.
+
+---

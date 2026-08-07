@@ -28,3 +28,9 @@ output "github_actions_role_arn" {
   description = "Add this as a GitHub Actions secret/variable for the ECR-push workflow to assume"
   value       = aws_iam_role.github_actions.arn
 }
+
+output "rds_endpoint" {
+  description = "Use this as POSTGRES_HOST in the api/worker HelmRelease values"
+  value       = aws_db_instance.postgres.address
+}
+
