@@ -20,7 +20,7 @@ spec:
   values:
     clusterName: pdf-service-dev
     region: eu-central-1
-    vpcId: "vpc-0c85c7e9da1216cd5"
+    vpcId: "vpc-0eab73ee04a5cb5f3"
     serviceAccount:
       create: true
       name: aws-load-balancer-controller
