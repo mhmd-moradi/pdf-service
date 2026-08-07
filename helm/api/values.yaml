@@ -8,7 +8,7 @@ image:
   # ECR repo URI on EKS; on minikube this is just a local image name loaded into minikube's Docker daemon
   repository: ghcr.io/mhmd-moradi/pdf-service-api
   # CI replaces this with the Git commit SHA on each push so every deploy is traceable
-  tag: "2d898eef24ab60a515ceaa50df3a71954b763520"
+  tag: "87bf457d2b0e6bd8b61b489de7884a04a025a8f9"
   # Built locally into minikube's Docker daemon (see README) rather than
   # pulled from a registry -- IfNotPresent avoids Kubernetes trying (and
   # failing) to pull from Docker Hub for an image name it doesn't own.

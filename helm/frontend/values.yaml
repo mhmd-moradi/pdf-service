@@ -5,7 +5,7 @@ image:
   # (.github/workflows/build-and-deploy.yml) after each push to main.
   # Manual edits here will be overwritten on the next CI run.
   repository: ghcr.io/mhmd-moradi/pdf-service-frontend
-  tag: "2d898eef24ab60a515ceaa50df3a71954b763520"
+  tag: "87bf457d2b0e6bd8b61b489de7884a04a025a8f9"
   pullPolicy: IfNotPresent
 
 service:
