@@ -8,6 +8,8 @@ spec:
   # KEDA will later create a ScaledObject that overrides this at runtime based on Redis queue depth;
   # this value is the fallback when KEDA is not installed
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "worker.labels" . | nindent 6 }}
