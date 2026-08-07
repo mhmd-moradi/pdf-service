@@ -6,7 +6,7 @@ image:
   # (.github/workflows/build-and-deploy.yml) after each push to main.
   # Manual edits here will be overwritten on the next CI run.
   repository: ghcr.io/mhmd-moradi/pdf-service-worker
-  tag: "19604e189bd87713a5eab1810e433d06a759ebb7"
+  tag: "ebc8cbcb9b932c0a6e9acdec239996b5f5991a6d"
   pullPolicy: IfNotPresent
 
 # Worker needs more resources than the API — it runs a full Chromium browser process per job
